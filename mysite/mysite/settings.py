@@ -46,8 +46,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'rest_framework',
+    'drf_spectacular',
 
     'frontend',
+    'myauth.apps.MyauthConfig',
+    'myprofile.apps.MyprofileConfig',
 ]
 
 MIDDLEWARE = [
@@ -58,6 +61,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    
+    'request_logging.middleware.LoggingMiddleware',
 ]
 
 ROOT_URLCONF = 'mysite.urls'
@@ -134,6 +139,50 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 10,
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
 }
+
+SPECTACULAR_SETTINGS = {
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SORT_OPERATION_PARAMETERS": False,
+    "SORT_OPERATIONS": False,
+}
+
+# LOGIN_URL = '/sign-in/'
+# LOGIN_REDIRECT_URL = '/profile/'
+
+APPEND_SLASH = False
+
+LOGLEVEL = getenv("DJANGO_LOGLEVEL", "info").upper()
+# LOGGING = {
+#     'version': 1,
+#     'disable_existing_loggers': False,
+#     'formatters': {
+#         'console': {
+#             'format': '[%(asctime)s] '
+#                       '[%(levelname)s] '
+#                       '[%(name)s] '
+#                       '[%(module)s] '
+#                       '[%(message)s] ',
+#         },
+#     },
+#     'handlers': {
+#         'console': {
+#             'class': 'logging.StreamHandler',
+#             'formatter': 'console',
+#         },
+#     },
+#     'loggers': {
+#         '': {
+#             'handlers': ['console'],
+#             'level': LOGLEVEL,
+#             'propagate': False,
+#         },
+#     },
+# }
