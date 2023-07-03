@@ -50,7 +50,7 @@ INSTALLED_APPS = [
 
     'frontend',
     'myauth.apps.MyauthConfig',
-    'myprofile.apps.MyprofileConfig',
+    'myshop.apps.MyshopConfig',
 ]
 
 MIDDLEWARE = [
@@ -142,7 +142,7 @@ MEDIA_ROOT = BASE_DIR / 'uploads'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    # 'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -156,9 +156,6 @@ SPECTACULAR_SETTINGS = {
     "SORT_OPERATION_PARAMETERS": False,
     "SORT_OPERATIONS": False,
 }
-
-# LOGIN_URL = '/sign-in/'
-# LOGIN_REDIRECT_URL = '/profile/'
 
 # APPEND_SLASH = False
 

@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
-from myprofile.models import Profile
+from myshop.models import Profile
 
 
 @extend_schema(
