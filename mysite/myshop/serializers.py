@@ -1,3 +1,6 @@
+from datetime import datetime
+
+import django_filters
 from rest_framework import serializers
 
 from .models import (
@@ -99,7 +102,11 @@ class SpecificationSerializer(serializers.ModelSerializer):
 class ReviewSerializer(serializers.ModelSerializer):
     """Сериализатор для преобразования данных модели Review"""
 
-    date = serializers.DateTimeField('read_only=True')
+    date = serializers.DateTimeField(
+        read_only=True,
+        initial=datetime.now(),
+        format='%Y-%m-%d %H:%M'
+    )
 
     class Meta:
         model = Review
@@ -113,8 +120,16 @@ class ReviewSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    """Сериализатор для преобразования данных модели Product"""
+    """
+    Сериализатор для преобразования данных модели Product.
 
+    Вывод полной информации о товаре.
+    """
+
+    date = serializers.DateTimeField(
+        read_only=True,
+        format=f'%a %b %d %Y %H:%M:%S %Z%z (Central European Standard Time)'
+    )
     images = ImageSerializer(read_only=True, many=True)
     tags = TagSerializer(read_only=True, many=True)
     reviews = ReviewSerializer(read_only=True, many=True)
@@ -138,3 +153,59 @@ class ProductSerializer(serializers.ModelSerializer):
             'specifications',
             'rating',
         )
+
+
+# СЕРИАЛИЗАТОРЫ ДЛЯ ОПИСАНИЯ КАТАЛОГА ТОВАРОВ:
+
+class ProductsSerializer(serializers.ModelSerializer):
+    """
+    Сериализатор для преобразования данных модели Product.
+
+    Вывод частичной информации о товаре - для каталога.
+    """
+
+    date = serializers.DateTimeField(
+        read_only=True,
+        format=f'%a %b %d %Y %H:%M:%S %Z%z (Central European Standard Time)'
+    )
+    images = ImageSerializer(read_only=True, many=True)
+    tags = TagSerializer(read_only=True, many=True)
+    reviews = serializers.IntegerField(
+        read_only=True,
+        source='reviews.count',
+    )
+
+    class Meta:
+        model = Product
+        fields = (
+            'id',
+            'category',
+            'price',
+            'count',
+            'date',
+            'title',
+            'description',
+            'freeDelivery',
+            'images',
+            'tags',
+            'reviews',
+            'rating',
+        )
+
+
+class CatalogFilter(django_filters.FilterSet):
+    name = django_filters.CharFilter(field_name='title')
+    minPrice = django_filters.NumberFilter(field_name='price', lookup_expr='gte')
+    maxPrice = django_filters.NumberFilter(field_name='price', lookup_expr='lte')
+    freeDelivery = django_filters.BooleanFilter(field_name='freeDelivery')
+    available = django_filters.BooleanFilter(field_name='count')
+
+    class Meta:
+        model = Product
+        fields = [
+            'name',
+            'minPrice',
+            'maxPrice',
+            'freeDelivery',
+            'available',
+        ]

@@ -1,4 +1,5 @@
-from datetime import datetime
+import json
+import math
 
 from django.contrib.auth.models import User
 from drf_spectacular.utils import (
@@ -12,7 +13,7 @@ from rest_framework.generics import (
     GenericAPIView,
     CreateAPIView,
     ListAPIView,
-    RetrieveAPIView,
+    RetrieveAPIView
 )
 from rest_framework.mixins import (
     RetrieveModelMixin,
@@ -22,6 +23,9 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
+from rest_framework.viewsets import ModelViewSet
+from rest_framework.filters import OrderingFilter
+from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import (
     Image,
@@ -39,6 +43,8 @@ from .serializers import (
     TagSerializer,
     ProductSerializer,
     ReviewSerializer,
+    ProductsSerializer,
+CatalogFilter,
 )
 
 
@@ -146,7 +152,7 @@ class CategoriesView(ListAPIView):
 
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    lookup_field = 'id'
+    # lookup_field = 'id'
 
 
 # ПРЕДСТАВЛЕНИЯ ДЛЯ ОПИСАНИЯ ПАРАМЕТРОВ ТОВАРА:
@@ -196,33 +202,168 @@ class ProductView(RetrieveAPIView):
         200: OpenApiResponse(description="successful operation"),
     },
 )
-class ProductReviewView(CreateAPIView):
+class ProductReviewView(APIView):
     """Представление для добавления отзыва о товаре."""
 
     serializer_class = ReviewSerializer
 
-    def post(self, request: Request, id) -> Response:
-        print("!!!!!!", request.data)
-
+    def post(self, request: Request, id: int) -> Response:
         product = Product.objects.get(id=id)
-        author = request.data.get('author')
-        email = request.data.get('email')
-        text = request.data.get('text')
-        rate = request.data.get('rate')
-        date = datetime.now()
 
-        Review.objects.create(
-            author=author,
-            email=email,
-            text=text,
-            rate=rate,
-            date=date,
-            product=product,
+        serializer = ReviewSerializer(data=request.data)
+        serializer.is_valid()
+        serializer.save(product=product)
+
+        reviews = [
+            review.rate
+            for review in Review.objects.filter(product=product)
+            ]
+
+        new_product_rating = round(sum(reviews) / len(reviews), 1)
+        product.rating = new_product_rating
+        product.save()
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ПРЕДСТАВЛЕНИЯ ДЛЯ ОПИСАНИЯ КАТАЛОГА ТОВАРОВ:
+
+
+class CatalogView(ListAPIView):
+    """Представление для чтения каталога товаров."""
+
+    # queryset = Product.objects.all()
+    serializer_class = ProductsSerializer
+
+    def get_queryset(self):
+        filters = self.request.query_params
+
+        self.title = filters.get('filter[name]')
+        self.minPrice = float(filters.get('filter[minPrice]'))
+        self.maxPrice = float(filters.get('filter[maxPrice]'))
+
+        self.freeDelivery = bool(filters.get('filter[freeDelivery]'))
+        if self.freeDelivery == 'false':
+            self.freeDelivery = False
+
+        self.available = filters.get('filter[available]')
+        if self.available == 'true':
+            self.range_available = (1, 1000)
+        else:
+            self.range_available = (0, 0)
+
+        self.currentPage = int(filters.get('currentPage'))
+        self.sort = filters.get('sort')
+
+        self.sortType = filters.get('sortType')
+        if self.sortType == 'inc':
+            self.sortType = '-'
+        else:
+            self.sortType = ''
+
+        self.limit = int(filters.get('limit'))
+
+        self.queryset_all = (
+            Product.objects
+            .filter(
+                title__icontains=self.title,
+                price__range=(self.minPrice, self.maxPrice),
+                freeDelivery=self.freeDelivery,
+                count__range=self.range_available,
+            )
+            .order_by(f'{self.sortType}{self.sort}')
         )
 
-        if 'csrfmiddlewaretoken' not in request.data:
-            request.data.update(date=date)
-            request.data.update(product=product)
+        queryset = (
+            self.queryset_all
+            [
+            self.limit * (self.currentPage - 1):self.limit * self.currentPage
+            ]
+        )
 
-        serializer = ReviewSerializer(request.data)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return queryset
+
+    def get(self, request: Request, *args, **kwargs) -> Response:
+        obj = super().get(request, *args, **kwargs)
+
+        lastPage = math.ceil(
+            self.queryset_all.count() / self.limit
+        )
+
+        print("!!!!!!!!!!***", obj.data)
+        return Response(
+            {
+                'items': obj.data,
+                'currentPage': self.currentPage,
+                'lastPage': lastPage,
+            },
+            status=status.HTTP_200_OK
+        )
+    #     serializer = ProductsSerializer(data=obj, many=True)
+    #     print(serializer)
+
+
+        # serializer = ProductsSerializer(data=queryset)
+        # serializer.is_valid()
+        # serializer.save()
+        # return Response(
+        #     {
+        #         'items': serializer.data,
+        #         'currentPage': currentPage,
+        #         'lastPage': 10,
+        #     },
+        #     status=status.HTTP_200_OK
+        # )
+
+
+    # filter_backends = [
+    #     DjangoFilterBackend,
+    #     OrderingFilter,
+    # ]
+    # filterset_class = CatalogFilter
+
+
+    # def get_queryset(self):
+    #     print("!!!!!", self.kwargs)
+    #     return Product.objects.all()
+
+    # filterset_fields = [
+    #     'title',
+    #     'price',
+    #     'freeDelivery',
+    #     'count',
+    # ]
+    #
+
+    # def get(self, request):
+    #     print("!!!!!", request.query_params)
+    #     filters = dict(request.query_params)
+    #     print("!!!!!", filters)
+    #     title = filters.get('filter[name]')
+    #     print(title)
+
+        # queryset = Product.objects.all()
+        #
+        # return Response(queryset.filter(title=title), status=200)
+
+    # queryset = Product.objects.all()
+    # serializer_class = ProductFilter
+    #
+    # filter_backends = [
+    #     OrderingFilter,
+    #     DjangoFilterBackend,
+    # ]
+    # ordering_fields = [
+    #     'rating',
+    #     'price',
+    #     'reviews',
+    #     'date',
+    # ]
+    #
+    # filterset_fields = [
+    #     'title',
+    #     'price',
+    #     'freeDelivery',
+    #     'count',
+    # ]
+

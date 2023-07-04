@@ -100,16 +100,16 @@ class Specification(models.Model):
 
 
 class Product(models.Model):
-    """Модель, представляющая продукт."""
+    """Модель, представляющая товар."""
 
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
+    category = models.ForeignKey(Subcategory, on_delete=models.CASCADE)
     price = models.DecimalField(
         max_digits=8,
         decimal_places=2,
         validators=[MinValueValidator(0.01)]
     )
     count = models.PositiveSmallIntegerField(default=0)
-    date = models.DateTimeField(auto_now_add=True)
+    date = models.DateTimeField(auto_now_add=True, )
     title = models.CharField(max_length=20)
     description = models.CharField(max_length=30)
     fullDescription = models.TextField(null=True, blank=True)
@@ -117,8 +117,10 @@ class Product(models.Model):
     images = models.ManyToManyField(Image, related_name="product_image")
     tags = models.ManyToManyField(Tag, related_name="product_tag")
     specifications = models.ManyToManyField(Specification, related_name="product_specification")
-    rating = models.PositiveSmallIntegerField(
-        validators=[MaxValueValidator(5)]
+    rating = models.DecimalField(
+        decimal_places=1,
+        max_digits=3,
+        validators=[MinValueValidator(0), MaxValueValidator(5)]
     )
 
     def __str__(self):

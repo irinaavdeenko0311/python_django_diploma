@@ -35,14 +35,19 @@ class ProfileAdmin(admin.ModelAdmin):
 
 # МОДЕЛИ ДЛЯ ОПИСАНИЯ КАТЕГОРИЙ ТОВАРОВ:
 
+class ProductInline(admin.TabularInline):
+    model = Product
+
+
 @admin.register(Subcategory)
 class SubcategoryAdmin(admin.ModelAdmin):
     """Модель, представляющая подкатегорию товара."""
 
-    list_display = [
-        field.name for field in Subcategory._meta.get_fields()
-    ]
+    list_display = 'id', 'title', 'categories'
     list_display_links = 'id', 'title'
+    inlines = [
+        ProductInline,
+    ]
 
 
 class SubcategoryInline(admin.TabularInline):
@@ -92,7 +97,7 @@ class ReviewInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    """Модель, представляющая продукт."""
+    """Модель, представляющая товар."""
 
     list_display = 'id', 'title', 'category'
     list_display_links = 'id', 'title'
