@@ -1,15 +1,22 @@
 import json
 import re
 
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.views import LoginView
 from django.db.utils import IntegrityError
 from django.core.exceptions import ValidationError
 from rest_framework.views import APIView
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework import status
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+from rest_framework.authtoken.models import Token
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiParameter,
+    OpenApiResponse,
+)
 
 from myshop.models import Profile
 
@@ -96,7 +103,8 @@ class SignUpView(APIView):
                 username=username,
                 password=password,
             )
-            Profile.objects.create(user=user, fullName=name)
+
+            Profile.objects.create(id=user, fullName=name)
 
             login(request, user)
             return Response(status=status.HTTP_200_OK)

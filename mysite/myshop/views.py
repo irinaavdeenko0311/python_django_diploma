@@ -1,14 +1,28 @@
 import json
 import math
+import random
+from datetime import datetime
+from operator import itemgetter
+from typing import List
 
+from django.forms.models import model_to_dict
+from rest_framework import serializers
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.models import User
+from django.db.models import Max
+from django.db.models.query import QuerySet
+from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     extend_schema,
     OpenApiResponse,
-    OpenApiParameter,
+    OpenApiParameter, OpenApiExample, extend_schema_view,
 )
 from django.contrib.auth import update_session_auth_hash
 from django.core.exceptions import ValidationError
+from django.views.decorators.cache import cache_page
+from django.core.cache import cache
+from django.utils.decorators import method_decorator
 from rest_framework.generics import (
     GenericAPIView,
     CreateAPIView,
@@ -19,13 +33,12 @@ from rest_framework.mixins import (
     RetrieveModelMixin,
     UpdateModelMixin,
 )
+from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.filters import OrderingFilter
-from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import (
     Image,
@@ -34,6 +47,8 @@ from .models import (
     Tag,
     Product,
     Review,
+    Subcategory,
+    ProductSale,
 )
 from .serializers import (
     ImageSerializer,
@@ -41,14 +56,19 @@ from .serializers import (
     UserPasswordSerializer,
     CategorySerializer,
     TagSerializer,
-    ProductSerializer,
+    ProductFullSerializer,
     ReviewSerializer,
-    ProductsSerializer,
-CatalogFilter,
+    ProductShortSerializer,
+    ProductSaleSerializer,
 )
 
 
 # ПРЕДСТАВЛЕНИЯ ДЛЯ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ:
+
+###############
+class IsActive(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_active
 
 @extend_schema(
     tags=['profile'],
@@ -56,16 +76,27 @@ CatalogFilter,
         200: OpenApiResponse(description="successful operation"),
     },
 )
-class ProfileView(GenericAPIView, RetrieveModelMixin, UpdateModelMixin):
+class ProfileView(
+    # UserPassesTestMixin,
+LoginRequiredMixin,
+    GenericAPIView,
+    RetrieveModelMixin,
+    UpdateModelMixin
+):
     """Представление для чтения и изменения информации из профиля пользователя."""
 
     serializer_class = ProfileSerializer
+    # permission_classes = [IsActive]
 
-    def get_object(self) -> 'Profile':
-        return Profile.objects.get(user=self.request.user)
+    # def test_func(self):
+    #     return self.request.user.is_active
+
+    def get_object(self) -> Profile:
+        return Profile.objects.get(id=self.request.user)
 
     @extend_schema(description="Get user profile")
     def get(self, request: Request) -> Response:
+        print("!!!!", self.request.user)
         return self.retrieve(request)
 
     @extend_schema(description="update user info")
@@ -74,8 +105,8 @@ class ProfileView(GenericAPIView, RetrieveModelMixin, UpdateModelMixin):
 
 
 @extend_schema(
-    description="update user password",
     tags=['profile'],
+    description="update user password",
     responses={
         200: OpenApiResponse(description="successful operation"),
     },
@@ -85,7 +116,7 @@ class ChangePasswordView(APIView):
 
     serializer_class = UserPasswordSerializer
 
-    def get_object(self):
+    def get_object(self) -> User:
         return User.objects.get(id=self.request.user.id)
 
     def post(self, request: Request) -> Response:
@@ -119,7 +150,7 @@ class AvatarView(CreateAPIView):
 
     serializer_class = ImageSerializer
 
-    def perform_create(self, serializer):
+    def perform_create(self, serializer) -> None:
         self.image_object = serializer.save()
 
     def post(self, request: Request, *args, **kwargs) -> Response:
@@ -131,7 +162,7 @@ class AvatarView(CreateAPIView):
 
         (
             Profile.objects
-            .filter(user=self.request.user)
+            .filter(id=self.request.user)
             .update(avatar=image_object)
         )
 
@@ -148,7 +179,7 @@ class AvatarView(CreateAPIView):
     },
 )
 class CategoriesView(ListAPIView):
-    """Представление для чтения информации о категориях товаров."""
+    """Представление для вывода категорий товаров."""
 
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -160,19 +191,20 @@ class CategoriesView(ListAPIView):
 @extend_schema(
     tags=['tags'],
     description='Get tags',
-    responses={
-        200: OpenApiResponse(description="successful operation"),
-    },
     parameters=[
         OpenApiParameter(
             name='category',
             description='categoryId',
             default=1,
+            type=OpenApiTypes.NUMBER,
         ),
-    ]
+    ],
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
 )
 class TagView(ListAPIView):
-    """Представление для чтения информации о тегах товаров."""
+    """Представление для вывода тегов товаров."""
 
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
@@ -186,11 +218,11 @@ class TagView(ListAPIView):
     },
 )
 class ProductView(RetrieveAPIView):
-    """Представление для чтения информации о товаре."""
+    """Представление для вывода информации о товаре."""
 
-    serializer_class = ProductSerializer
+    serializer_class = ProductFullSerializer
 
-    def get_object(self):
+    def get_object(self) -> Product:
         product_id = self.kwargs.get('id')
         return Product.objects.get(id=product_id)
 
@@ -202,7 +234,7 @@ class ProductView(RetrieveAPIView):
         200: OpenApiResponse(description="successful operation"),
     },
 )
-class ProductReviewView(APIView):
+class ReviewView(APIView):
     """Представление для добавления отзыва о товаре."""
 
     serializer_class = ReviewSerializer
@@ -211,9 +243,10 @@ class ProductReviewView(APIView):
         product = Product.objects.get(id=id)
 
         serializer = ReviewSerializer(data=request.data)
-        serializer.is_valid()
-        serializer.save(product=product)
+        if serializer.is_valid():
+            serializer.save(product=product)
 
+        # обновление рейтинга товара после добавления нового отзыва:
         reviews = [
             review.rate
             for review in Review.objects.filter(product=product)
@@ -229,141 +262,349 @@ class ProductReviewView(APIView):
 # ПРЕДСТАВЛЕНИЯ ДЛЯ ОПИСАНИЯ КАТАЛОГА ТОВАРОВ:
 
 
+@extend_schema(
+    tags=['catalog'],
+    description='get catalog items',
+    parameters=[
+        OpenApiParameter(
+            name='filter',
+            description='search text',
+            type=OpenApiTypes.OBJECT,
+            default={
+                "name": "string",
+                "minPrice": 0,
+                "maxPrice": 0,
+                "freeDelivery": False,
+                "available": True
+            }
+        ),
+        OpenApiParameter(
+            name='currentPage',
+            description='page',
+            default=1,
+            type=OpenApiTypes.NUMBER,
+        ),
+        OpenApiParameter(
+            name='category',
+            type=OpenApiTypes.NUMBER,
+        ),
+        OpenApiParameter(
+            name='sort',
+            enum=('rating', 'price', 'reviews', 'date'),
+            default='price',
+        ),
+        OpenApiParameter(
+            name='sortType',
+            enum=('dec', 'inc'),
+            default='inc',
+        ),
+        OpenApiParameter(
+            name='tags',
+            description='page',
+            type=OpenApiTypes.OBJECT,
+            many=True,
+        ),
+        OpenApiParameter(
+            name='limit',
+            default=20,
+            type=OpenApiTypes.NUMBER,
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
 class CatalogView(ListAPIView):
-    """Представление для чтения каталога товаров."""
+    """Представление для вывода каталога товаров."""
 
-    # queryset = Product.objects.all()
-    serializer_class = ProductsSerializer
+    serializer_class = ProductShortSerializer
 
-    def get_queryset(self):
-        filters = self.request.query_params
+    def get_queryset(self) -> QuerySet:
+        filter_parameters = self.request.query_params
 
-        self.title = filters.get('filter[name]')
-        self.minPrice = float(filters.get('filter[minPrice]'))
-        self.maxPrice = float(filters.get('filter[maxPrice]'))
+        self.title = filter_parameters.get('filter[name]')
+        self.minPrice = filter_parameters.get('filter[minPrice]')
+        self.maxPrice = filter_parameters.get('filter[maxPrice]')
 
-        self.freeDelivery = bool(filters.get('filter[freeDelivery]'))
-        if self.freeDelivery == 'false':
-            self.freeDelivery = False
+        self.freeDelivery = filter_parameters.get('filter[freeDelivery]')
 
-        self.available = filters.get('filter[available]')
+        self.available = filter_parameters.get('filter[available]')
         if self.available == 'true':
-            self.range_available = (1, 1000)
+            self.available = True
         else:
-            self.range_available = (0, 0)
+            self.available = False
 
-        self.currentPage = int(filters.get('currentPage'))
-        self.sort = filters.get('sort')
+        self.currentPage = int(filter_parameters.get('currentPage'))
+        self.category = filter_parameters.get('category')
+        self.sort = filter_parameters.get('sort')
 
-        self.sortType = filters.get('sortType')
+        self.sortType = filter_parameters.get('sortType')
         if self.sortType == 'inc':
             self.sortType = '-'
         else:
             self.sortType = ''
 
-        self.limit = int(filters.get('limit'))
+        self.tags = filter_parameters.getlist('tags[]')
+        self.tags = [tag for tag in self.tags]
+
+        self.limit = int(filter_parameters.get('limit'))
 
         self.queryset_all = (
             Product.objects
+            .annotate(sort=Max(self.sort))
             .filter(
                 title__icontains=self.title,
                 price__range=(self.minPrice, self.maxPrice),
-                freeDelivery=self.freeDelivery,
-                count__range=self.range_available,
+                count__gte=self.available,
             )
-            .order_by(f'{self.sortType}{self.sort}')
+            .order_by(f'{self.sortType}sort')
         )
+
+        if self.freeDelivery == 'true':
+            self.queryset_all = self.queryset_all.filter(
+                freeDelivery=True
+            )
+
+        if self.category:
+            self.queryset_all = self.queryset_all.filter(
+                category=self.category
+            )
+
+        if self.tags:
+            self.queryset_all = (
+                self.queryset_all.filter(tags__in=self.tags)
+                .distinct()
+            )
 
         queryset = (
             self.queryset_all
-            [
-            self.limit * (self.currentPage - 1):self.limit * self.currentPage
-            ]
+            [self.limit * (self.currentPage - 1):self.limit * self.currentPage]
         )
 
         return queryset
 
     def get(self, request: Request, *args, **kwargs) -> Response:
-        obj = super().get(request, *args, **kwargs)
+        response = super().get(request, *args, **kwargs)
 
         lastPage = math.ceil(
             self.queryset_all.count() / self.limit
         )
 
-        print("!!!!!!!!!!***", obj.data)
         return Response(
             {
-                'items': obj.data,
+                'items': response.data,
                 'currentPage': self.currentPage,
                 'lastPage': lastPage,
             },
             status=status.HTTP_200_OK
         )
-    #     serializer = ProductsSerializer(data=obj, many=True)
-    #     print(serializer)
 
 
-        # serializer = ProductsSerializer(data=queryset)
-        # serializer.is_valid()
-        # serializer.save()
-        # return Response(
-        #     {
-        #         'items': serializer.data,
-        #         'currentPage': currentPage,
-        #         'lastPage': 10,
-        #     },
-        #     status=status.HTTP_200_OK
-        # )
+@extend_schema(
+    tags=['catalog'],
+    description='get catalog popular items',
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
+class ProductsPopularView(ListAPIView):
+    """Представление для вывода популярных товаров."""
+
+    queryset = Product.objects.order_by('-rating')[:4]
+    serializer_class = ProductShortSerializer
 
 
-    # filter_backends = [
-    #     DjangoFilterBackend,
-    #     OrderingFilter,
-    # ]
-    # filterset_class = CatalogFilter
+@extend_schema(
+    tags=['catalog'],
+    description='get catalog limeted items',
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
+class ProductsLimitedView(ListAPIView):
+    """Представление для вывода товаров с ограниченным тиражом."""
+
+    queryset = Product.objects.filter(count__range=(1, 2))
+    serializer_class = ProductShortSerializer
 
 
-    # def get_queryset(self):
-    #     print("!!!!!", self.kwargs)
-    #     return Product.objects.all()
+@extend_schema(
+    tags=['catalog'],
+    description='get sales items',
+    parameters=[
+        OpenApiParameter(
+            name='currentPage',
+            description='page',
+            type=OpenApiTypes.NUMBER,
+            default=1
+        )
+    ],
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
+class ProductSaleView(ListAPIView):
+    """Представление для вывода товаров, участвующих в распродаже."""
 
-    # filterset_fields = [
-    #     'title',
-    #     'price',
-    #     'freeDelivery',
-    #     'count',
-    # ]
-    #
+    serializer_class = ProductSaleSerializer
+    limit = 5
 
-    # def get(self, request):
-    #     print("!!!!!", request.query_params)
-    #     filters = dict(request.query_params)
-    #     print("!!!!!", filters)
-    #     title = filters.get('filter[name]')
-    #     print(title)
+    def get_queryset(self) -> QuerySet:
+        self.currentPage = int(self.request.query_params.get('currentPage'))
 
-        # queryset = Product.objects.all()
-        #
-        # return Response(queryset.filter(title=title), status=200)
+        self.queryset_all = ProductSale.objects.all()
 
-    # queryset = Product.objects.all()
-    # serializer_class = ProductFilter
-    #
-    # filter_backends = [
-    #     OrderingFilter,
-    #     DjangoFilterBackend,
-    # ]
-    # ordering_fields = [
-    #     'rating',
-    #     'price',
-    #     'reviews',
-    #     'date',
-    # ]
-    #
-    # filterset_fields = [
-    #     'title',
-    #     'price',
-    #     'freeDelivery',
-    #     'count',
-    # ]
+        queryset = (
+            self.queryset_all
+            [self.limit * (self.currentPage - 1):self.limit * self.currentPage]
+        )
 
+        return queryset
+
+    def get(self, request: Request, *args, **kwargs) -> Response:
+        response = super().get(request, *args, **kwargs)
+
+        lastPage = math.ceil(
+            self.queryset_all.count() / self.limit
+        )
+
+        return Response(
+            {
+                'items': response.data,
+                'currentPage': self.currentPage,
+                'lastPage': lastPage,
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+@extend_schema(
+    tags=['catalog'],
+    description='get banner items',
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
+class ProductBannersSaleView(ListAPIView):
+    """
+    Представление для вывода товаров на баннере главной страницы.
+
+    Выводит три товара из случайных категорий.
+    После клика на эти товары переход в раздел категории.
+    """
+
+    serializer_class = ProductShortSerializer
+
+    def get_queryset(self) -> List[Product]:
+        category_count = (
+            Subcategory.objects.all()
+            .aggregate(category_count=Max('id'))['category_count'])
+        categories = random.sample(range(1, category_count + 1), 3)
+
+        return [
+            Product.objects
+            .filter(category=category)
+            .first()
+            for category in categories
+        ]
+
+
+@extend_schema(
+    tags=['basket'],
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
+class BasketView(ListAPIView):
+    """Представление для работы с корзиной"""
+
+    serializer_class = ProductShortSerializer
+
+    def get_queryset(self) -> List[Product]:
+        self.basket = self.request.session.get('basket')
+
+        if self.basket:
+            return [
+                Product.objects.get(id=position['id'])
+                for position in self.basket
+            ]
+        self.request.session['basket'] = list()
+
+    @extend_schema(
+        description='Get items in basket',
+    )
+    def get(self, request: Request, *args, **kwargs) -> Response:
+        response = super().get(request, *args, **kwargs)
+
+        if self.basket:
+            basket_id = [position['id'] for position in self.basket]
+
+        # меняем количество и стоимость товаров (в соответствии с корзиной):
+        for product in response.data:
+            product_id = product.get('id')
+
+            index = basket_id.index(product_id)
+            product_count = self.basket[index]['count']
+
+            product['count'] = product_count
+            product['price'] = product['price'] * product_count
+
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        description='Add item to basket',
+        examples=[
+            OpenApiExample(
+                name='product count',
+                value={
+                    'id': 1,
+                    'count': 5,
+                },
+            ),
+        ],
+    )
+    def post(self, request: Request, *args, **kwargs) -> Response:
+        basket = self.request.session.get('basket')
+
+        product_id = request.data.get('id')
+        product_count = request.data.get('count')
+
+        basket_id = [position['id'] for position in basket]
+        if product_id in basket_id:
+            index = basket_id.index(product_id)
+            basket[index]['count'] += product_count
+        else:
+            basket.append(dict(id=product_id, count=product_count))
+
+        self.request.session['basket'] = basket
+
+        return self.get(request, *args, **kwargs)
+
+    @extend_schema(
+        description='Remove item from basket',
+        examples=[
+            OpenApiExample(
+                name='product count',
+                value={
+                    'id': 1,
+                    'count': 5,
+                },
+            ),
+        ],
+    )
+    def delete(self, request: Request, *args, **kwargs) -> Response:
+        basket = self.request.session.get('basket')
+
+        product_id = request.data.get('id')
+        product_count = request.data.get('count')
+
+        basket_id = [position['id'] for position in basket]
+        index = basket_id.index(product_id)
+        basket[index]['count'] -= product_count
+
+        if basket[index]['count'] == 0:
+            basket.pop(index)
+
+        self.request.session['basket'] = basket
+
+        return self.get(request, *args, **kwargs)

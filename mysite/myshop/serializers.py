@@ -12,6 +12,7 @@ from .models import (
     Specification,
     Review,
     Product,
+    ProductSale,
 )
 
 
@@ -25,7 +26,7 @@ class ImageSerializer(serializers.ModelSerializer):
         fields = 'src', 'alt'
 
 
-# СЕРИАЛИЗАТОРЫ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ:
+# СЕРИАЛИЗАТОРЫ ДЛЯ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ:
 
 class ProfileSerializer(serializers.ModelSerializer):
     """Сериализатор для преобразования данных модели Profile."""
@@ -49,7 +50,7 @@ class UserPasswordSerializer(serializers.Serializer):
     newPassword = serializers.CharField(required=True)
 
 
-# СЕРИАЛИЗАТОРЫ КАТЕГОРИЙ ТОВАРОВ:
+# СЕРИАЛИЗАТОРЫ ДЛЯ КАТЕГОРИЙ ТОВАРОВ:
 
 class SubcategorySerializer(serializers.ModelSerializer):
     """Сериализатор для преобразования данных модели Subcategory"""
@@ -81,14 +82,14 @@ class CategorySerializer(serializers.ModelSerializer):
         )
 
 
-# СЕРИАЛИЗАТОРЫ ДЛЯ ОПИСАНИЯ ПАРАМЕТРОВ ТОВАРА:
+# СЕРИАЛИЗАТОРЫ ДЛЯ ПАРАМЕТРОВ ТОВАРА:
 
 class TagSerializer(serializers.ModelSerializer):
-    """Сериализатор для преобразования данных модели Tag"""
+    """Сериализатор для преобразования данных модели Tag."""
 
     class Meta:
         model = Tag
-        fields = 'name',
+        fields = 'id', 'name',
 
 
 class SpecificationSerializer(serializers.ModelSerializer):
@@ -119,7 +120,7 @@ class ReviewSerializer(serializers.ModelSerializer):
         )
 
 
-class ProductSerializer(serializers.ModelSerializer):
+class ProductFullSerializer(serializers.ModelSerializer):
     """
     Сериализатор для преобразования данных модели Product.
 
@@ -132,6 +133,7 @@ class ProductSerializer(serializers.ModelSerializer):
     )
     images = ImageSerializer(read_only=True, many=True)
     tags = TagSerializer(read_only=True, many=True)
+    # tags = serializers.StringRelatedField(many=True)
     reviews = ReviewSerializer(read_only=True, many=True)
     specifications = SpecificationSerializer(read_only=True, many=True)
 
@@ -155,9 +157,9 @@ class ProductSerializer(serializers.ModelSerializer):
         )
 
 
-# СЕРИАЛИЗАТОРЫ ДЛЯ ОПИСАНИЯ КАТАЛОГА ТОВАРОВ:
+# СЕРИАЛИЗАТОРЫ ДЛЯ КАТАЛОГА ТОВАРОВ:
 
-class ProductsSerializer(serializers.ModelSerializer):
+class ProductShortSerializer(serializers.ModelSerializer):
     """
     Сериализатор для преобразования данных модели Product.
 
@@ -193,19 +195,82 @@ class ProductsSerializer(serializers.ModelSerializer):
         )
 
 
-class CatalogFilter(django_filters.FilterSet):
-    name = django_filters.CharFilter(field_name='title')
-    minPrice = django_filters.NumberFilter(field_name='price', lookup_expr='gte')
-    maxPrice = django_filters.NumberFilter(field_name='price', lookup_expr='lte')
-    freeDelivery = django_filters.BooleanFilter(field_name='freeDelivery')
-    available = django_filters.BooleanFilter(field_name='count')
+class ProductSaleSerializer(serializers.ModelSerializer):
+    """Сериализатор для преобразования данных модели ProductSale."""
+
+    dateFrom = serializers.DateTimeField(
+        read_only=True,
+        format=f'%m-%d'
+    )
+    dateTo = serializers.DateTimeField(
+        read_only=True,
+        format=f'%m-%d'
+    )
+    images = ImageSerializer(read_only=True, many=True)
 
     class Meta:
-        model = Product
-        fields = [
-            'name',
-            'minPrice',
-            'maxPrice',
-            'freeDelivery',
-            'available',
-        ]
+        model = ProductSale
+        fields = (
+            'id',
+            'price',
+            'salePrice',
+            'dateFrom',
+            'dateTo',
+            'title',
+            'images',
+        )
+
+
+# class CategoriesFilter(django_filters.FilterSet):
+#
+#
+#     date = serializers.DateTimeField(
+#         read_only=True,
+#         format=f'%a %b %d %Y %H:%M:%S %Z%z (Central European Standard Time)'
+#     )
+#     images = ImageSerializer(read_only=True, many=True)
+#     tags = TagSerializer(read_only=True, many=True)
+#     reviews = serializers.IntegerField(
+#         read_only=True,
+#         source='reviews.count',
+#     )
+#
+#     class Meta:
+#         model = Product
+#         fields = (
+#             'id',
+#             'category',
+#             'price',
+#             'count',
+#             'date',
+#             'title',
+#             'description',
+#             'freeDelivery',
+#             'images',
+#             'tags',
+#             'reviews',
+#             'rating',
+#         )
+
+# class CatalogFilter(django_filters.FilterSet):
+#     category = django_filters.NumberFilter(field_name='category')
+#     class Meta:
+#         model = Product
+#         fields = 'category',
+
+# class CatalogFilter(django_filters.FilterSet):
+#     name = django_filters.CharFilter(field_name='title')
+#     minPrice = django_filters.NumberFilter(field_name='price', lookup_expr='gte')
+#     maxPrice = django_filters.NumberFilter(field_name='price', lookup_expr='lte')
+#     freeDelivery = django_filters.BooleanFilter(field_name='freeDelivery')
+#     available = django_filters.BooleanFilter(field_name='count')
+#
+#     class Meta:
+#         model = Product
+#         fields = [
+#             'name',
+#             'minPrice',
+#             'maxPrice',
+#             'freeDelivery',
+#             'available',
+#         ]

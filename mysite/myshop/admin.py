@@ -9,6 +9,7 @@ from .models import (
     Specification,
     Product,
     Review,
+    ProductSale,
 )
 
 
@@ -30,7 +31,7 @@ class ProfileAdmin(admin.ModelAdmin):
     list_display = [
         field.name for field in Profile._meta.get_fields()
     ]
-    list_display_links = 'id', 'user'
+    list_display_links = 'id',
 
 
 # МОДЕЛИ ДЛЯ ОПИСАНИЯ КАТЕГОРИЙ ТОВАРОВ:
@@ -106,4 +107,25 @@ class ProductAdmin(admin.ModelAdmin):
     ]
 
 
+@admin.register(ProductSale)
+class ProductSaleAdmin(admin.ModelAdmin):
+    """Модель, представляющая товар, участвующий в распродаже."""
 
+    list_display = 'id', 'title'
+
+    def save_related(self, request, form, formsets, change):
+        """
+        Дополнение метода.
+
+        После сохранения экземпляра модели через административную панель
+        изменение поля images(m2m) нужными значениями.
+        """
+        super(ProductSaleAdmin, self).save_related(request, form, formsets, change)
+
+        images = (
+            Product.objects
+            .prefetch_related('images')
+            .get(id=form.instance.id.id)
+            .images.all()
+        )
+        form.instance.images.set(images)

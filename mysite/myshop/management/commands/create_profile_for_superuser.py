@@ -6,6 +6,7 @@ from myshop.models import Profile
 
 class Command(BaseCommand):
     """Команда для создания сущности Profile для суперпользователя."""
+
     def handle(self, *args, **options) -> None:
-        user = User.objects.get(username="admin")
-        Profile.objects.create(user=user)
+        for user in User.objects.filter(is_superuser=True):
+            Profile.objects.create(id=user)

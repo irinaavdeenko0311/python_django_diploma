@@ -10,6 +10,7 @@ from django.core.validators import (
 
 def image_directory_path(instance: "Image", filename: str) -> str:
     """Функция для формирования пути, по которому сохраняется изображение."""
+
     return f"images/{filename}"
 
 
@@ -36,7 +37,8 @@ class Image(models.Model):
 class Profile(models.Model):
     """Модель Profile: представляет профиль пользователя."""
 
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    id = models.OneToOneField(User, primary_key=True, on_delete=models.CASCADE)
+    # user = models.OneToOneField(User, on_delete=models.CASCADE)
     fullName = models.CharField(max_length=20)
     email = models.EmailField(null=True, blank=True, max_length=40)
     phone = models.PositiveIntegerField(null=True, blank=True)
@@ -86,7 +88,7 @@ class Tag(models.Model):
     name = models.CharField(max_length=20)
 
     def __str__(self):
-        return f'#{self.name}'
+        return f'{self.name}'
 
 
 class Specification(models.Model):
@@ -109,7 +111,7 @@ class Product(models.Model):
         validators=[MinValueValidator(0.01)]
     )
     count = models.PositiveSmallIntegerField(default=0)
-    date = models.DateTimeField(auto_now_add=True, )
+    date = models.DateTimeField(auto_now_add=True)
     title = models.CharField(max_length=20)
     description = models.CharField(max_length=30)
     fullDescription = models.TextField(null=True, blank=True)
@@ -142,3 +144,54 @@ class Review(models.Model):
         on_delete=models.CASCADE,
         related_name='reviews',
     )
+
+
+class ProductSale(models.Model):
+    """Модель, представляющая товар, участвующий в распродаже."""
+
+    id = models.OneToOneField(Product, primary_key=True, on_delete=models.CASCADE)
+    price = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        validators=[MinValueValidator(0.01)]
+    )
+    salePrice = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        validators=[MinValueValidator(0.01)]
+    )
+    dateFrom = models.DateTimeField()
+    dateTo = models.DateTimeField()
+    title = models.CharField(max_length=20)
+    images = models.ManyToManyField(
+        Image,
+        related_name="product_sale_image",
+        null=True,
+        blank=True,
+    )
+
+    def save(self, *args, **kwargs) -> None:
+        """
+        Функция для создания товара, участвующего в распродаже.
+
+        При создании экземпляра данные берутся из модели Product:
+        старая цена, название и изображения.
+        В модели Product цена меняется на новую сниженную.
+        """
+        product = (
+            Product.objects
+            .prefetch_related('images')
+            .get(id=self.id.id)
+        )
+
+        self.price = product.price
+        self.title = product.title
+
+        new_price = self.salePrice
+        product.price = new_price
+        product.save()
+
+        super(ProductSale, self).save(*args, **kwargs)
+
+        images = product.images.all()
+        self.images.set(images)

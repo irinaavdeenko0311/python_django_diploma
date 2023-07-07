@@ -1,7 +1,5 @@
 from django.urls import path
 
-# from rest_framework.routers import DefaultRouter
-
 from .views import (
     ProfileView,
     ChangePasswordView,
@@ -9,28 +7,33 @@ from .views import (
     CategoriesView,
     TagView,
     ProductView,
-    ProductReviewView,
-
+    ReviewView,
     CatalogView,
+    ProductsPopularView,
+    ProductsLimitedView,
+    ProductSaleView,
+    ProductBannersSaleView,
+BasketView
 )
 
 app_name = "shop"
 
-# routers = DefaultRouter()
-# routers.register('categories', CategoriesView)
-
 urlpatterns = [
-    path("profile/", ProfileView.as_view(), name="profile"),
-    path("profile", ProfileView.as_view(), name="profile_with_slash"),
-    path("profile/password", ChangePasswordView.as_view(), name="profile_password"),
-    path("profile/avatar", AvatarView.as_view(), name="profile_avatar"),
+    path("profile/", ProfileView.as_view()),
+    path("profile", ProfileView.as_view()),
+    path("profile/password", ChangePasswordView.as_view()),
+    path("profile/avatar", AvatarView.as_view()),
 
     path("categories", CategoriesView.as_view()),
-    # path("", include(routers.urls)),
 
-    path("tags", TagView.as_view(), name="tags"),
-    path("product/<int:id>", ProductView.as_view(), name="product"),
-    path("product/<int:id>/reviews", ProductReviewView.as_view(), name="product_reviews"),
+    path("tags", TagView.as_view()),
+    path("product/<int:id>", ProductView.as_view()),
+    path("product/<int:id>/reviews", ReviewView.as_view()),
 
-    path("catalog", CatalogView.as_view(), name="catalog"),
+    path("catalog", CatalogView.as_view()),
+    path("products/popular", ProductsPopularView.as_view()),
+    path("products/limited", ProductsLimitedView.as_view()),
+    path("sales", ProductSaleView.as_view()),
+    path("banners", ProductBannersSaleView.as_view()),
+    path("basket", BasketView.as_view()),
 ]
