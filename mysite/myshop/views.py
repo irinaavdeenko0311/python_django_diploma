@@ -1,44 +1,35 @@
-import json
 import math
 import random
 from datetime import datetime
-from operator import itemgetter
-from typing import List
+from typing import List, Optional
 
-from django.forms.models import model_to_dict
-from rest_framework import serializers
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.models import User
 from django.db.models import Max
 from django.db.models.query import QuerySet
-from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     extend_schema,
     OpenApiResponse,
-    OpenApiParameter, OpenApiExample, extend_schema_view,
+    OpenApiParameter,
+    OpenApiExample,
 )
 from django.contrib.auth import update_session_auth_hash
 from django.core.exceptions import ValidationError
-from django.views.decorators.cache import cache_page
-from django.core.cache import cache
-from django.utils.decorators import method_decorator
 from rest_framework.generics import (
     GenericAPIView,
     CreateAPIView,
     ListAPIView,
-    RetrieveAPIView
+    RetrieveAPIView,
+    ListCreateAPIView,
 )
 from rest_framework.mixins import (
     RetrieveModelMixin,
     UpdateModelMixin,
 )
-from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
 
 from .models import (
     Image,
@@ -46,9 +37,10 @@ from .models import (
     Category,
     Tag,
     Product,
-    Review,
     Subcategory,
     ProductSale,
+    Order,
+    OrderProduct,
 )
 from .serializers import (
     ImageSerializer,
@@ -56,19 +48,15 @@ from .serializers import (
     UserPasswordSerializer,
     CategorySerializer,
     TagSerializer,
-    ProductFullSerializer,
     ReviewSerializer,
+    ProductFullSerializer,
     ProductShortSerializer,
     ProductSaleSerializer,
+    OrderSerializer,
 )
 
 
-# ПРЕДСТАВЛЕНИЯ ДЛЯ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ:
-
-###############
-class IsActive(BasePermission):
-    def has_permission(self, request, view):
-        return request.user.is_active
+# ПРЕДСТАВЛЕНИЯ ДЛЯ РАБОТЫ С ПРОФИЛЕМ ПОЛЬЗОВАТЕЛЯ:
 
 @extend_schema(
     tags=['profile'],
@@ -76,27 +64,16 @@ class IsActive(BasePermission):
         200: OpenApiResponse(description="successful operation"),
     },
 )
-class ProfileView(
-    # UserPassesTestMixin,
-LoginRequiredMixin,
-    GenericAPIView,
-    RetrieveModelMixin,
-    UpdateModelMixin
-):
-    """Представление для чтения и изменения информации из профиля пользователя."""
+class ProfileView(GenericAPIView, RetrieveModelMixin, UpdateModelMixin):
+    """Представление для чтения/изменения информации из профиля пользователя."""
 
     serializer_class = ProfileSerializer
-    # permission_classes = [IsActive]
-
-    # def test_func(self):
-    #     return self.request.user.is_active
 
     def get_object(self) -> Profile:
         return Profile.objects.get(id=self.request.user)
 
     @extend_schema(description="Get user profile")
     def get(self, request: Request) -> Response:
-        print("!!!!", self.request.user)
         return self.retrieve(request)
 
     @extend_schema(description="update user info")
@@ -132,7 +109,10 @@ class ChangePasswordView(APIView):
                     update_session_auth_hash(request, user_object)
                     return Response(status=status.HTTP_200_OK)
                 else:
-                    raise ValidationError("The password you have entered does not match your current one. ")
+                    raise ValidationError(
+                        "The password you have entered "
+                        "does not match your current one."
+                    )
 
         except ValidationError as error:
             return Response(error, status=status.HTTP_403_FORBIDDEN)
@@ -169,7 +149,7 @@ class AvatarView(CreateAPIView):
         return Response(status=status.HTTP_200_OK)
 
 
-# ПРЕДСТАВЛЕНИЯ ДЛЯ ОПИСАНИЯ КАТЕГОРИЙ ТОВАРОВ:
+# ПРЕДСТАВЛЕНИЯ ДЛЯ РАБОТЫ С КАТЕГОРИЯМИ ТОВАРОВ:
 
 @extend_schema(
     tags=['catalog'],
@@ -183,10 +163,9 @@ class CategoriesView(ListAPIView):
 
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    # lookup_field = 'id'
 
 
-# ПРЕДСТАВЛЕНИЯ ДЛЯ ОПИСАНИЯ ПАРАМЕТРОВ ТОВАРА:
+# ПРЕДСТАВЛЕНИЯ ДЛЯ РАБОТЫ С ТОВАРОМ И ЕГО ПАРАМЕТРАМИ:
 
 @extend_schema(
     tags=['tags'],
@@ -247,20 +226,17 @@ class ReviewView(APIView):
             serializer.save(product=product)
 
         # обновление рейтинга товара после добавления нового отзыва:
-        reviews = [
-            review.rate
-            for review in Review.objects.filter(product=product)
-            ]
-
-        new_product_rating = round(sum(reviews) / len(reviews), 1)
+        new_product_rating = round(
+            float(product.rating) * 0.8 + serializer.data.get('rate') * 0.2,
+            1
+        )
         product.rating = new_product_rating
         product.save()
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-# ПРЕДСТАВЛЕНИЯ ДЛЯ ОПИСАНИЯ КАТАЛОГА ТОВАРОВ:
-
+# ПРЕДСТАВЛЕНИЯ ДЛЯ РАБОТЫ С КАТАЛОГОМ ТОВАРОВ:
 
 @extend_schema(
     tags=['catalog'],
@@ -509,6 +485,8 @@ class ProductBannersSaleView(ListAPIView):
         ]
 
 
+# ПРЕДСТАВЛЕНИЯ ДЛЯ РАБОТЫ С КОРЗИНОЙ:
+
 @extend_schema(
     tags=['basket'],
     responses={
@@ -516,18 +494,26 @@ class ProductBannersSaleView(ListAPIView):
     },
 )
 class BasketView(ListAPIView):
-    """Представление для работы с корзиной"""
+    """Представление для работы с корзиной."""
 
     serializer_class = ProductShortSerializer
 
-    def get_queryset(self) -> List[Product]:
+    def get_queryset(self) -> Optional[List[Product]]:
         self.basket = self.request.session.get('basket')
 
         if self.basket:
-            return [
-                Product.objects.get(id=position['id'])
-                for position in self.basket
-            ]
+            queryset = list()
+            for position in self.basket:
+                product = Product.objects.get(id=position['id'])
+                # проверка наличия товара:
+                if product.count > 0:
+                    queryset.append(product)
+                    # невозможно добавить в корзину товаров больше,
+                    # чем имеется в наличии:
+                    if product.count < position['count']:
+                        position['count'] = product.count
+            return queryset
+
         self.request.session['basket'] = list()
 
     @extend_schema(
@@ -539,7 +525,7 @@ class BasketView(ListAPIView):
         if self.basket:
             basket_id = [position['id'] for position in self.basket]
 
-        # меняем количество и стоимость товаров (в соответствии с корзиной):
+        # меняем количество товаров в соответствии с корзиной:
         for product in response.data:
             product_id = product.get('id')
 
@@ -547,7 +533,6 @@ class BasketView(ListAPIView):
             product_count = self.basket[index]['count']
 
             product['count'] = product_count
-            product['price'] = product['price'] * product_count
 
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -608,3 +593,212 @@ class BasketView(ListAPIView):
         self.request.session['basket'] = basket
 
         return self.get(request, *args, **kwargs)
+
+
+# ПРЕДСТАВЛЕНИЯ ДЛЯ РАБОТЫ С ЗАКАЗАМИ:
+
+@extend_schema(
+    tags=['order'],
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
+class OrdersView(ListCreateAPIView):
+    """Представление для чтения и изменения заказов пользователя."""
+
+    serializer_class = OrderSerializer
+
+    def get_queryset(self) -> QuerySet:
+        user = self.request.user
+        return Order.objects.filter(user=user)
+
+    @extend_schema(description='Get active order')
+    def get(self, request: Request, *args, ** kwargs) -> Response:
+        response = super().get(request, *args, ** kwargs)
+
+        # Товары заказа хранятся в таблице OrderProduct
+        # в формате "товар-количество", но каждом заказе необходимо
+        # выводить информацию о товаре в соответствии с
+        # сериализатором ProductShortSerializer.
+        # Поэтому в сериализаторе каждого товара заменим параметры:
+        # count - на количество товара в заказе
+        # price - на общую стоимость товаров в заказе:
+        for order in response.data:
+            for product in order.get('products'):
+                product_id = product.get('product')
+                product_count = product.get('count')
+
+                product_obj = Product.objects.get(id=product_id)
+                serializer = ProductShortSerializer(product_obj).data
+
+                serializer['id'] = product_id
+                serializer['count'] = product_count
+                product.update(serializer)
+
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    @extend_schema(description='Create order')
+    def post(self, request: Request) -> Response:
+        user = request.user
+        profile = Profile.objects.get(id=user)
+        fullName = profile.fullName
+        email = profile.email
+        phone = profile.phone
+        totalCost = sum(
+            [
+                product.get('price') * product.get('count')
+                for product in request.data
+            ]
+        )
+
+        order = Order.objects.create(
+            user=user,
+            fullName=fullName,
+            email=email,
+            phone=phone,
+            totalCost=totalCost,
+        )
+
+        for product in request.data:
+            product_id = product.get('id')
+            product_count = product.get('count')
+
+            order_product = OrderProduct.objects.create(
+                product=Product.objects.get(id=product_id),
+                count=product_count,
+            )
+
+            order.products.add(order_product)
+
+        return Response(
+            {'orderId': order.id},
+            status=status.HTTP_200_OK
+        )
+
+
+@extend_schema(
+    tags=['order'],
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
+class OrderView(RetrieveAPIView):
+    """Представление для чтения и изменения заказа пользователя."""
+
+    serializer_class = OrderSerializer
+
+    def get_object(self):
+        order_id = self.kwargs.get('id')
+        return Order.objects.get(id=order_id)
+
+    @extend_schema(description="Get order")
+    def get(self, request: Request, id: int) -> Response:
+        response = super().get(request, id)
+
+        # Товары заказа хранятся в таблице OrderProduct
+        # в формате "товар-количество", но необходимо выводить
+        # информацию о товаре в соответствии с
+        # сериализатором ProductShortSerializer.
+        # Поэтому в сериализаторе каждого товара заменим параметры:
+        # count - на количество товара в заказе
+        # price - на общую стоимость товаров в заказе:
+        for product in response.data.get('products'):
+            product_id = product.get('product')
+            product_count = product.get('count')
+
+            product_obj = Product.objects.get(id=product_id)
+            serializer = ProductShortSerializer(product_obj).data
+
+            serializer['id'] = product_id
+            serializer['count'] = product_count
+            product.update(serializer)
+
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    @extend_schema(description="Confirm order")
+    def post(self, request: Request, id: int) -> Response:
+        order = Order.objects.get(id=id)
+
+        order.fullName = request.data.get('fullName')
+        order.phone = request.data.get('phone')
+        order.email = request.data.get('email')
+        order.paymentType = request.data.get('paymentType')
+        order.city = request.data.get('city')
+        order.address = request.data.get('address')
+
+        current_deliveryType = order.deliveryType
+        new_deliveryType = request.data.get('deliveryType')
+        if (
+                new_deliveryType == 'express'
+                and current_deliveryType == 'ordinary'
+        ):
+            if order.totalCost < 2200:
+                order.totalCost -= 200
+            order.totalCost += 500
+        elif (
+                new_deliveryType == 'ordinary'
+                and current_deliveryType == 'express'
+        ):
+            order.totalCost -= 500
+            if order.totalCost < 2000:
+                order.totalCost += 200
+
+        order.deliveryType = new_deliveryType
+
+        if order.status == 'created':
+            order.status = 'accepted'
+
+            # при подтверждении заказа меняем количество товара
+            # в наличии в БД:
+            products_in_order = request.data.get('products')
+            products_id = [product['id'] for product in products_in_order]
+            for order_product in order.products.all():
+                product_id = order_product.product.id
+                index = products_id.index(product_id)
+                product_count = products_in_order[index]['count']
+
+                product_obj = Product.objects.get(id=product_id)
+                product_obj.count = product_count
+                product_obj.save()
+
+        order.save()
+
+        return Response({'orderId': id}, status=status.HTTP_200_OK)
+
+
+# ПРЕДСТАВЛЕНИЯ ОПЛАТЫ:
+
+@extend_schema(
+    tags=['payment'],
+    description='Payment',
+    responses={
+        200: OpenApiResponse(description="successful operation"),
+    },
+)
+class PaymentView(APIView):
+    """Представление для оплаты."""
+
+    def post(self, request: Request, id: int) -> Response:
+        date_now = datetime.strptime(
+            f'{datetime.now().year}-{datetime.now().month}', "%Y-%m"
+        )
+        date_card = datetime.strptime(
+            f"{request.data.get('year')}-{request.data.get('month')}", "%y-%m"
+        )
+        try:
+            if (
+                    int(request.data.get('number')) % 2 != 0
+                    or len(request.data.get('number')) > 8
+                    or date_now > date_card
+            ):
+                raise ValidationError('ValidationError')
+
+            order = Order.objects.get(id=id)
+            order.status = 'paid'
+            order.save()
+
+            return Response(status=status.HTTP_200_OK)
+        except (ValueError, ValidationError) as error:
+            return Response(
+                {"unsuccessful operation": str(error)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -143,7 +143,7 @@ MEDIA_ROOT = BASE_DIR / 'uploads'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-LOGIN_URL = '/sign-in/'
+LOGIN_URL = '/sign-in'
 
 REST_FRAMEWORK = {
     # 'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.CursorPagination',
@@ -164,8 +164,6 @@ SPECTACULAR_SETTINGS = {
     "SORT_OPERATION_PARAMETERS": False,
     "SORT_OPERATIONS": False,
 }
-
-# APPEND_SLASH = False
 
 LOGLEVEL = getenv("DJANGO_LOGLEVEL", "info").upper()
 # LOGGING = {

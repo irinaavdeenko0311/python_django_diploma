@@ -1,17 +1,14 @@
 import json
 import re
 
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.views import LoginView
 from django.db.utils import IntegrityError
 from django.core.exceptions import ValidationError
 from rest_framework.views import APIView
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.authtoken.models import Token
 from drf_spectacular.utils import (
     extend_schema,
     OpenApiParameter,
