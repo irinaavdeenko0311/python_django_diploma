@@ -124,14 +124,23 @@ class Product(models.Model):
     count = models.PositiveSmallIntegerField(default=0)
     date = models.DateTimeField(auto_now_add=True)
     title = models.CharField(max_length=20)
-    description = models.CharField(max_length=30)
+    description = models.CharField(max_length=100)
     fullDescription = models.TextField(null=True, blank=True)
     freeDelivery = models.BooleanField(default=True)
-    images = models.ManyToManyField(Image, related_name="product_image")
-    tags = models.ManyToManyField(Tag, related_name="product_tag")
+    images = models.ManyToManyField(
+        Image,
+        related_name="product_image",
+        blank=True,
+    )
+    tags = models.ManyToManyField(
+        Tag,
+        related_name="product_tag",
+        blank=True)
     specifications = models.ManyToManyField(
         Specification,
-        related_name="product_specification")
+        related_name="product_specification",
+        blank=True
+    )
     rating = models.DecimalField(
         decimal_places=1,
         max_digits=3,
@@ -185,7 +194,6 @@ class ProductSale(models.Model):
     images = models.ManyToManyField(
         Image,
         related_name="product_sale_image",
-        null=True,
         blank=True,
     )
 

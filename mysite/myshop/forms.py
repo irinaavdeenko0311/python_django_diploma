@@ -26,3 +26,12 @@ class ImagesForm(forms.Form):
     Используется в административной панели.
     """
     file_field = MultipleFileField()
+
+
+class CSVForm(forms.Form):
+    """
+    Форма для загрузки файла CSV.
+
+    Используется в административной панели.
+    """
+    csv_file = forms.FileField()

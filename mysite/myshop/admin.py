@@ -1,5 +1,6 @@
-from io import TextIOWrapper
 import os
+from io import TextIOWrapper
+from csv import DictReader
 
 from django.contrib import admin
 from django.http import HttpRequest, HttpResponse
@@ -19,7 +20,9 @@ from .models import (
     OrderProduct,
     Order,
 )
-from .forms import ImagesForm
+from .forms import ImagesForm, CSVForm
+from myshop.management.commands.upload_categories_to_db import create_category
+from myshop.management.commands.upload_products_to_db import create_product
 
 
 # ОБЩИЕ МОДЕЛИ:
@@ -100,6 +103,33 @@ class CategoryAdmin(admin.ModelAdmin):
     inlines = [
         SubcategoryInline,
     ]
+    change_list_template = "myshop/csv_categories_changelist.html"
+
+    def import_csv(self, request: HttpRequest) -> HttpResponse:
+        if request.method == "GET":
+            form = CSVForm()
+            context = {
+                "form": form
+            }
+            return render(request, "admin/csv_form.html", context=context)
+        form = CSVForm(request.POST, request.FILES)
+        if form.is_valid():
+            csv_file = TextIOWrapper(
+                form.files['csv_file'].file,
+                encoding=request.encoding,
+            )
+            reader = DictReader(csv_file)
+            create_category(reader)
+
+            self.message_user(request, "Данные файла успешно загружены в БД.")
+            return redirect("..")
+
+    def get_urls(self):
+        urls = super().get_urls()
+        new_urls = [
+            path("import-category-csv/", self.import_csv, name="import_category_csv")
+        ]
+        return new_urls + urls
 
 
 # МОДЕЛИ ДЛЯ ОПИСАНИЯ ТОВАРА И ЕГО ПАРАМЕТРОВ:
@@ -141,6 +171,34 @@ class ProductAdmin(admin.ModelAdmin):
     inlines = [
         ReviewInline,
     ]
+    change_list_template = "myshop/csv_products_changelist.html"
+
+    def import_csv(self, request: HttpRequest) -> HttpResponse:
+        if request.method == "GET":
+            form = CSVForm()
+            context = {
+                "form": form
+            }
+            return render(request, "admin/csv_form.html", context=context)
+        form = CSVForm(request.POST, request.FILES)
+        if form.is_valid():
+            csv_file = TextIOWrapper(
+                form.files['csv_file'].file,
+                encoding=request.encoding,
+            )
+            reader = DictReader(csv_file)
+
+            create_product(reader)
+
+            self.message_user(request, "Данные файла успешно загружены в БД.")
+            return redirect("..")
+
+    def get_urls(self):
+        urls = super().get_urls()
+        new_urls = [
+            path("import-product-csv/", self.import_csv, name="import_product_csv")
+        ]
+        return new_urls + urls
 
 
 @admin.register(ProductSale)
