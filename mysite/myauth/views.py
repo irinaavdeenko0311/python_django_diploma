@@ -15,7 +15,7 @@ from drf_spectacular.utils import (
     OpenApiResponse,
 )
 
-from myshop.models import Profile
+from myshop.models import Profile, Order
 
 
 @extend_schema(
@@ -49,6 +49,20 @@ class SignInView(APIView):
 
         if user:
             login(request, user)
+
+            # если авторизация пользователя происходила
+            # после создания заказа, после авторизации
+            # нужно привязать пользователя к данному заказу
+            # (номер заказа сохранен в кеше):
+            if self.request.session.get('order'):
+                profile = Profile.objects.get(id=user)
+                order = Order.objects.get(id=self.request.session.get('order'))
+                order.user = user
+                order.fullName = profile.fullName
+                order.email = profile.email
+                order.phone = profile.phone
+                order.save()
+
             return Response(status=status.HTTP_200_OK)
 
         return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -100,10 +114,19 @@ class SignUpView(APIView):
                 username=username,
                 password=password,
             )
-
-            Profile.objects.create(id=user, fullName=name)
-
+            profile = Profile.objects.create(id=user, fullName=name)
             login(request, user)
+
+            # если регистрация пользователя происходила
+            # после создания заказа, после регистрации
+            # нужно привязать пользователя к данному заказу
+            # (номер заказа сохранен в кеше):
+            if self.request.session.get('order'):
+                order = Order.objects.get(id=self.request.session.get('order'))
+                order.user = user
+                order.fullName = profile.fullName
+                order.save()
+
             return Response(status=status.HTTP_200_OK)
 
         except (IntegrityError, ValidationError) as error:

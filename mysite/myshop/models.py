@@ -241,9 +241,9 @@ class OrderProduct(models.Model):
 class Order(models.Model):
     """Модель, представляющая заказ."""
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, default=1)
     createdAt = models.DateTimeField(auto_now_add=True)
-    fullName = models.CharField(max_length=20)
+    fullName = models.CharField(max_length=20, null=True, blank=True)
     email = models.EmailField(null=True, blank=True, max_length=40)
     phone = models.PositiveIntegerField(null=True, blank=True)
     deliveryType = models.CharField(max_length=20, default='ordinary')

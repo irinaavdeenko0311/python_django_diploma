@@ -97,3 +97,6 @@ dmypy.json
 .pyre/
 
 .idea/
+
+requirements_linux.txt
+requirements_windows.txt

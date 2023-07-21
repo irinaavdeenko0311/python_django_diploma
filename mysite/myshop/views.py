@@ -386,7 +386,7 @@ class CatalogView(ListAPIView):
 class ProductsPopularView(ListAPIView):
     """Представление для вывода популярных товаров."""
 
-    queryset = Product.objects.order_by('-rating')[:4]
+    queryset = Product.objects.order_by('-rating')[:8]
     serializer_class = ProductShortSerializer
 
 
@@ -400,7 +400,7 @@ class ProductsPopularView(ListAPIView):
 class ProductsLimitedView(ListAPIView):
     """Представление для вывода товаров с ограниченным тиражом."""
 
-    queryset = Product.objects.filter(count__range=(1, 2))
+    queryset = Product.objects.filter(count__range=(1, 2))[:16]
     serializer_class = ProductShortSerializer
 
 
@@ -639,11 +639,6 @@ class OrdersView(ListCreateAPIView):
 
     @extend_schema(description='Create order')
     def post(self, request: Request) -> Response:
-        user = request.user
-        profile = Profile.objects.get(id=user)
-        fullName = profile.fullName
-        email = profile.email
-        phone = profile.phone
         totalCost = sum(
             [
                 product.get('price') * product.get('count')
@@ -651,13 +646,27 @@ class OrdersView(ListCreateAPIView):
             ]
         )
 
-        order = Order.objects.create(
-            user=user,
-            fullName=fullName,
-            email=email,
-            phone=phone,
-            totalCost=totalCost,
-        )
+        user = request.user
+
+        # если пользователь не авторизован, создается заказ
+        # без привязки к пользователю:
+        if not user.is_authenticated:
+            order = Order.objects.create(
+                totalCost=totalCost,
+            )
+        else:
+            profile = Profile.objects.get(id=user)
+            fullName = profile.fullName
+            email = profile.email
+            phone = profile.phone
+
+            order = Order.objects.create(
+                user=user,
+                fullName=fullName,
+                email=email,
+                phone=phone,
+                totalCost=totalCost,
+            )
 
         for product in request.data:
             product_id = product.get('id')
@@ -669,6 +678,16 @@ class OrdersView(ListCreateAPIView):
             )
 
             order.products.add(order_product)
+
+        # если пользователь не авторизован, при оформлении
+        # заказа он будет перекинут либо на страницу с
+        # авторизацией, либо с регистрацией -
+        # чтобы при этом не потерять номер заказа,
+        # сохраним его в кэше и после того, как пользователь
+        # авторизуется/зарегистрируется, привяжем данный
+        # заказ в этому пользователю:
+        if not user.is_authenticated:
+            self.request.session['order'] = order.id
 
         return Response(
             {'orderId': order.id},
@@ -788,7 +807,7 @@ class PaymentView(APIView):
         try:
             if (
                     int(request.data.get('number')) % 2 != 0
-                    or len(request.data.get('number')) > 8
+                    or len(request.data.get('number')) > 12
                     or date_now > date_card
             ):
                 raise ValidationError('ValidationError')
