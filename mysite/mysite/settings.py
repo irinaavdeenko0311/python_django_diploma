@@ -46,11 +46,12 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'rest_framework',
+
     'drf_spectacular',
 
     'frontend',
     'myauth.apps.MyauthConfig',
-    'myprofile.apps.MyprofileConfig',
+    'myshop.apps.MyshopConfig',
 ]
 
 MIDDLEWARE = [
@@ -133,19 +134,28 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'uploads'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+LOGIN_URL = '/sign-in'
+
 REST_FRAMEWORK = {
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    # 'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.CursorPagination',
     'PAGE_SIZE': 10,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.BasicAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+    ],
+    'COERCE_DECIMAL_TO_STRING': False,
 }
 
 SPECTACULAR_SETTINGS = {
@@ -153,11 +163,6 @@ SPECTACULAR_SETTINGS = {
     "SORT_OPERATION_PARAMETERS": False,
     "SORT_OPERATIONS": False,
 }
-
-# LOGIN_URL = '/sign-in/'
-# LOGIN_REDIRECT_URL = '/profile/'
-
-APPEND_SLASH = False
 
 LOGLEVEL = getenv("DJANGO_LOGLEVEL", "info").upper()
 # LOGGING = {
